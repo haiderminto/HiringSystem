@@ -26,6 +26,7 @@ from agents.state import AgentState
 from agents.graph import run_pipeline
 from agents.nodes import jd_extraction
 from utils.storage import get_upload_folder, save_uploaded_file, save_results, ensure_directories
+from utils.observability import init_tracing
 
 # Configure logging
 logging.basicConfig(
@@ -37,6 +38,10 @@ logger = logging.getLogger("ats")
 
 # Ensure directories exist
 ensure_directories()
+
+# Initialize Arize Phoenix tracing (must run before LLM clients are created)
+_tracing_ok = init_tracing()
+logger.info(f"Arize tracing: {'ENABLED' if _tracing_ok else 'DISABLED'}")
 
 app = FastAPI(
     title="ATS Resume Evaluator",
@@ -75,6 +80,7 @@ async def health():
         "provider": settings.llm_provider,
         "model": settings.active_default_model,
         "api_key_set": bool(settings.active_api_key) and not settings.active_api_key.endswith("here"),
+        "arize_tracing": _tracing_ok,
     }
 
 

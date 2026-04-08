@@ -1,6 +1,9 @@
 // === DOM Elements ===
 const jdInput = document.getElementById('jd-input');
 const folderInput = document.getElementById('folder-input');
+const fileInput = document.getElementById('file-input');
+const dropZone = document.getElementById('drop-zone');
+const fileList = document.getElementById('file-list');
 const evaluateBtn = document.getElementById('evaluate-btn');
 const clearBtn = document.getElementById('clear-btn');
 const progressSection = document.getElementById('progress-section');
@@ -10,19 +13,48 @@ const jdDetails = document.getElementById('jd-details');
 const resultsSection = document.getElementById('results-section');
 const resultsCount = document.getElementById('results-count');
 const resultsContainer = document.getElementById('results-container');
+let selectedFiles = [];
 
 // === Enable/disable evaluate button ===
 function updateEvaluateButton() {
-    evaluateBtn.disabled = !(jdInput.value.trim() && folderInput.value.trim());
+    evaluateBtn.disabled = !(jdInput.value.trim() && (folderInput.value.trim() || selectedFiles.length > 0));
 }
 
 jdInput.addEventListener('input', updateEvaluateButton);
 folderInput.addEventListener('input', updateEvaluateButton);
+fileInput.addEventListener('change', () => {
+    addFiles(Array.from(fileInput.files));
+    fileInput.value = '';
+});
+
+dropZone.addEventListener('click', () => fileInput.click());
+
+renderFileList();
+
+dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+});
+
+dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('drag-over');
+});
+
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files).filter(f =>
+        f.name.toLowerCase().endsWith('.pdf') || f.name.toLowerCase().endsWith('.docx')
+    );
+    addFiles(files);
+});
 
 // === Clear ===
 clearBtn.addEventListener('click', () => {
     jdInput.value = '';
     folderInput.value = '';
+    selectedFiles = [];
+    renderFileList();
     updateEvaluateButton();
     progressSection.classList.add('hidden');
     jdSection.classList.add('hidden');
@@ -38,7 +70,7 @@ evaluateBtn.addEventListener('click', startEvaluation);
 async function startEvaluation() {
     const jd = jdInput.value.trim();
     const folder = folderInput.value.trim();
-    if (!jd || !folder) return;
+    if (!jd || (!folder && selectedFiles.length === 0)) return;
 
     // UI state: processing
     evaluateBtn.disabled = true;
@@ -69,12 +101,25 @@ async function startEvaluation() {
     }
 
     try {
-        // Send GET request (proxy blocks all POST requests)
-        const params = new URLSearchParams({
-            resume_folder: folder,
-            job_description: jd,
-        });
-        const response = await fetch(`/api/evaluate-local?${params.toString()}`);
+        let response;
+
+        if (selectedFiles.length > 0) {
+            logProgress(`Uploading ${selectedFiles.length} resume file(s) via drag-and-drop...`, 'info');
+            const formData = new FormData();
+            formData.append('job_description', jd);
+            selectedFiles.forEach(file => formData.append('resumes', file));
+            response = await fetch('/api/evaluate', {
+                method: 'POST',
+                body: formData,
+            });
+        } else {
+            logProgress('Using local folder evaluation path...', 'info');
+            const params = new URLSearchParams({
+                resume_folder: folder,
+                job_description: jd,
+            });
+            response = await fetch(`/api/evaluate-local?${params.toString()}`);
+        }
 
         if (!response.ok) {
             const rawText = await response.text().catch(() => '');
@@ -451,41 +496,6 @@ function formatSize(bytes) {
     return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
-
-/* ========================================================================
-   ORIGINAL FILE-UPLOAD UI CODE (commented out — proxy blocks multipart)
-   ========================================================================
-
-const fileInput = document.getElementById('file-input');
-const dropZone = document.getElementById('drop-zone');
-const fileList = document.getElementById('file-list');
-let selectedFiles = [];
-
-dropZone.addEventListener('click', () => fileInput.click());
-
-dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('drag-over');
-});
-
-dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('drag-over');
-});
-
-dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    const files = Array.from(e.dataTransfer.files).filter(f =>
-        f.name.endsWith('.pdf') || f.name.endsWith('.docx')
-    );
-    addFiles(files);
-});
-
-fileInput.addEventListener('change', () => {
-    addFiles(Array.from(fileInput.files));
-    fileInput.value = '';
-});
-
 function addFiles(files) {
     for (const file of files) {
         if (!selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
@@ -503,6 +513,11 @@ function removeFile(index) {
 }
 
 function renderFileList() {
+    if (selectedFiles.length === 0) {
+        fileList.innerHTML = '<div class="file-item" style="justify-content:center;color:var(--text-secondary);">No resume files selected yet.</div>';
+        return;
+    }
+
     fileList.innerHTML = selectedFiles.map((file, idx) => `
         <div class="file-item">
             <span class="file-name">${escapeHtml(file.name)}</span>
@@ -511,14 +526,3 @@ function renderFileList() {
         </div>
     `).join('');
 }
-
-// Original FormData-based evaluate (used /api/evaluate with multipart upload):
-//
-// const formData = new FormData();
-// formData.append('job_description', jd);
-// for (const file of selectedFiles) {
-//     formData.append('resumes', file);
-// }
-// const response = await fetch('/api/evaluate', { method: 'POST', body: formData });
-
-======================================================================== */

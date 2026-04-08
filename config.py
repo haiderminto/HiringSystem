@@ -24,9 +24,18 @@ class Settings(BaseSettings):
     upload_dir: str = os.getenv("UPLOAD_DIR", "uploads")
     results_dir: str = os.getenv("RESULTS_DIR", "results")
 
+    # Arize Tracing
+    arize_space_id: str = os.getenv("ARIZE_SPACE_ID", "")
+    arize_api_key: str = os.getenv("ARIZE_API_KEY", "")
+    arize_project_name: str = os.getenv("ARIZE_PROJECT_NAME", "ats-resume-evaluator")
+
     # Test mode (used by test_pipeline.py)
     resume_folder: str = os.getenv("RESUME_FOLDER", "resumes")
     jd_text: str = os.getenv("JD_TEXT", "")
+
+    @property
+    def arize_enabled(self) -> bool:
+        return bool(self.arize_space_id) and bool(self.arize_api_key)
 
     @property
     def is_anthropic(self) -> bool:
