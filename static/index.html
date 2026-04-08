@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATS Resume Evaluator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>ATS Resume Evaluator</h1>
+            <p class="subtitle">AI-Powered Resume Screening with Hallucination Detection</p>
+        </div>
+    </header>
+
+    <main>
+        <!-- Input Section -->
+        <section id="input-section" class="card">
+            <div class="input-grid">
+                <!-- Job Description -->
+                <div class="input-group">
+                    <label for="jd-input">Job Description</label>
+                    <textarea id="jd-input" placeholder="Paste the complete job description here..." rows="14"></textarea>
+                </div>
+
+                <!-- Resume Folder Path -->
+                <div class="input-group">
+                    <label for="folder-input">Resume Folder (local path with PDF / DOCX files)</label>
+                    <input type="text" id="folder-input" placeholder="e.g. D:\HiringSystem\resumes" style="width:100%;padding:0.7rem 1rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.95rem;font-family:inherit;background:var(--bg);color:var(--text);margin-bottom:0.5rem;">
+                    <p class="hint" style="font-size:0.8rem;color:var(--text-secondary);margin:0;">Place your resume PDF/DOCX files in this folder. All files will be evaluated.</p>
+                </div>
+
+                <!-- Original file upload UI (disabled — proxy blocks multipart uploads)
+                <div class="input-group">
+                    <label>Resume Files (PDF / DOCX)</label>
+                    <div id="drop-zone" class="drop-zone">
+                        <div class="drop-zone-content">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            <p>Drag & drop resumes here</p>
+                            <p class="hint">or click to browse</p>
+                        </div>
+                        <input type="file" id="file-input" multiple accept=".pdf,.docx" hidden>
+                    </div>
+                    <div id="file-list" class="file-list"></div>
+                </div>
+                -->
+            </div>
+
+            <div class="actions">
+                <button id="evaluate-btn" class="btn-primary" disabled>
+                    <span class="btn-text">Evaluate Resumes</span>
+                    <span class="btn-loading hidden">
+                        <span class="spinner"></span>
+                        Processing...
+                    </span>
+                </button>
+                <button id="clear-btn" class="btn-secondary">Clear All</button>
+            </div>
+        </section>
+
+        <!-- Progress Section -->
+        <section id="progress-section" class="card hidden">
+            <h2>Processing Pipeline</h2>
+            <div id="progress-log" class="progress-log"></div>
+        </section>
+
+        <!-- JD Requirements Section -->
+        <section id="jd-section" class="card hidden">
+            <h2>Extracted Job Requirements</h2>
+            <div id="jd-details" class="jd-details"></div>
+        </section>
+
+        <!-- Results Section -->
+        <section id="results-section" class="card hidden">
+            <h2>Evaluation Results <span id="results-count" class="badge"></span></h2>
+            <p class="results-subtitle">Ranked by overall score (descending)</p>
+            <div id="results-container"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>ATS Resume Evaluator Agent v1.0 &mdash; Powered by Claude</p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
