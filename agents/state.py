@@ -1,3 +1,4 @@
+import re
 import uuid
 import time
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ class AgentState:
     resume_file_path: str = ""
     resume_file_type: str = ""  # "pdf" | "docx"
     resume_filename: str = ""  # original filename for display
+    requisition_id: str = ""  # Talent ID from requisition CSV
 
     # --- PROCESSED FILES ---
     resume_pdf_path: str = ""
@@ -52,6 +54,15 @@ class AgentState:
     current_node: str = ""
     path_taken: list = field(default_factory=list)
 
+    # --- CONTACT INFO (extracted from resume text) ---
+    candidate_name: str = ""
+    candidate_email: str = ""
+    candidate_phone: str = ""
+    candidate_total_experience: str = ""
+    candidate_company: str = ""
+    candidate_location: str = ""
+    candidate_skill: str = ""
+
     # --- OUTPUT ---
     final_evaluation: Optional[dict] = None
     final_score: float = 0.0
@@ -84,9 +95,52 @@ class AgentState:
         if "cost_estimate" in log_entry:
             self.total_cost_estimate += log_entry.get("cost_estimate", 0.0)
 
+    def extract_contact_info(self):
+        """Extract candidate name, email, and phone from resume text."""
+        text = self.resume_extracted_text or ""
+
+        # Email
+        email_match = re.search(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', text)
+        if email_match:
+            self.candidate_email = email_match.group(0)
+
+        # Phone — various formats
+        phone_match = re.search(
+            r'(?:\+?\d{1,3}[\s\-.]?)?\(?\d{2,4}\)?[\s\-.]?\d{3,4}[\s\-.]?\d{3,4}', text
+        )
+        if phone_match:
+            self.candidate_phone = phone_match.group(0).strip()
+
+        # Name — first non-empty line of resume (usually the candidate name)
+        if not self.candidate_name:
+            for line in text.split('\n'):
+                line = line.strip()
+                if line and not re.match(r'^(http|www\.|[a-zA-Z0-9._%+\-]+@)', line) and len(line) < 80:
+                    self.candidate_name = line
+                    break
+
+        # Fallback: derive name from filename
+        if not self.candidate_name and self.resume_filename:
+            import os
+            name = os.path.splitext(self.resume_filename)[0]
+            name = re.sub(r'[_\-]+', ' ', name)
+            name = re.sub(r'(?i)\b(resume|cv)\b', '', name).strip()
+            self.candidate_name = name.title() if name else self.resume_filename
+
     def to_final_output(self) -> dict:
         """Package the final result with all metadata."""
+        self.extract_contact_info()
         return {
+            "requisition_id": self.requisition_id,
+            "candidate_contact": {
+                "name": self.candidate_name,
+                "email": self.candidate_email,
+                "phone": self.candidate_phone,
+                "total_experience": self.candidate_total_experience,
+                "company": self.candidate_company,
+                "location": self.candidate_location,
+                "skill": self.candidate_skill,
+            },
             "candidate_evaluation": {
                 "overall_score": self.final_score or self.overall_score,
                 "category_scores": self.category_scores or {},

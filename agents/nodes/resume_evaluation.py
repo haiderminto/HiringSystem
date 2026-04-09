@@ -76,6 +76,14 @@ def run(state: AgentState) -> AgentState:
         deal_breaker = parsed.get("deal_breaker_check", {})
         state.deal_breaker_status = deal_breaker.get("status", "PASS")
 
+        # Extract candidate profile fields from LLM response
+        profile = parsed.get("candidate_profile", {})
+        if profile:
+            state.candidate_total_experience = profile.get("total_experience_years", "")
+            state.candidate_company = profile.get("current_company", "")
+            state.candidate_location = profile.get("candidate_location", "")
+            state.candidate_skill = profile.get("primary_skills", "")
+
         state.attempt_count += 1
 
         print(f"[TRACE]   RESUME_EVALUATION result: overall_score={state.overall_score}, "

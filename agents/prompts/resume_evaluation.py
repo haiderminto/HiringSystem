@@ -58,7 +58,13 @@ Return a single JSON object:
     "status": "PASS" | "FAIL",
     "explanation": "string"
   }},
-  "summary": "string (2-3 sentence verdict on fit)"
+  "summary": "string (2-3 sentence verdict on fit)",
+  "candidate_profile": {{
+    "total_experience_years": "string (e.g. '5' or '8+', best estimate from resume)",
+    "current_company": "string (most recent employer, or empty if not found)",
+    "candidate_location": "string (city/state/country from resume, or empty if not found)",
+    "primary_skills": "string (comma-separated top 5 skills from the resume)"
+  }}
 }}
 
 ## Extracted Job Requirements

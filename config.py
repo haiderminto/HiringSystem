@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     arize_api_key: str = os.getenv("ARIZE_API_KEY", "")
     arize_project_name: str = os.getenv("ARIZE_PROJECT_NAME", "ats-resume-evaluator")
 
+    # Job Requisition CSV
+    job_requisition_csv: str = os.getenv("JOB_REQUISITION_CSV", "")
+    resume_results_csv: str = os.getenv("RESUME_RESULTS_CSV", "")
+
     # Test mode (used by test_pipeline.py)
     resume_folder: str = os.getenv("RESUME_FOLDER", "resumes")
     jd_text: str = os.getenv("JD_TEXT", "")

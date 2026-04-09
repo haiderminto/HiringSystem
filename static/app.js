@@ -1,9 +1,6 @@
 // === DOM Elements ===
 const jdInput = document.getElementById('jd-input');
 const folderInput = document.getElementById('folder-input');
-const fileInput = document.getElementById('file-input');
-const dropZone = document.getElementById('drop-zone');
-const fileList = document.getElementById('file-list');
 const evaluateBtn = document.getElementById('evaluate-btn');
 const clearBtn = document.getElementById('clear-btn');
 const progressSection = document.getElementById('progress-section');
@@ -12,57 +9,174 @@ const jdSection = document.getElementById('jd-section');
 const jdDetails = document.getElementById('jd-details');
 const resultsSection = document.getElementById('results-section');
 const resultsCount = document.getElementById('results-count');
-const resultsContainer = document.getElementById('results-container');
-let selectedFiles = [];
+const resultsTbody = document.getElementById('results-tbody');
+const detailPanel = document.getElementById('detail-panel');
+const selectAllCheckbox = document.getElementById('select-all');
+const screenBtn = document.getElementById('screen-btn');
+const selectedCountSpan = document.getElementById('selected-count');
+const inputSection = document.getElementById('input-section');
+const reqTbody = document.getElementById('req-tbody');
+const selectedReqInfo = document.getElementById('selected-req-info');
+
+// State
+let allResults = [];
+let allRequisitions = [];
+let selectedRequisition = null;
+
+// === Requisition Loading ===
+async function loadRequisitions() {
+    reqTbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:2rem;">Loading...</td></tr>';
+    try {
+        const resp = await fetch('/api/requisitions');
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ detail: 'Failed to load' }));
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        allRequisitions = data.requisitions || [];
+        renderRequisitions(allRequisitions);
+    } catch (e) {
+        reqTbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--danger);padding:2rem;">Error: ${escapeHtml(e.message)}</td></tr>`;
+    }
+}
+
+function renderRequisitions(reqs) {
+    if (reqs.length === 0) {
+        reqTbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:2rem;">No requisitions found.</td></tr>';
+        return;
+    }
+
+    reqTbody.innerHTML = reqs.map((r, idx) => {
+        const reqId = r['Requisition ID'] || '';
+        const designation = r['Designation'] || '';
+        const skill = r['Skill'] || '';
+        const location = r['Location'] || '';
+        const grade = r['Grade'] || '';
+        const status = r['Status'] || '';
+
+        return `<tr class="req-row" data-index="${idx}" onclick="selectRequisition(${idx})">
+            <td class="col-check"><input type="radio" name="req-select" class="req-radio" data-index="${idx}"></td>
+            <td>${escapeHtml(reqId)}</td>
+            <td>${escapeHtml(designation)}</td>
+            <td>${escapeHtml(skill)}</td>
+            <td>${escapeHtml(location)}</td>
+            <td>${escapeHtml(grade)}</td>
+            <td>${escapeHtml(status)}</td>
+        </tr>`;
+    }).join('');
+}
+
+function selectRequisition(idx) {
+    selectedRequisition = allRequisitions[idx];
+
+    if (!selectedRequisition) return;
+
+    // Update radio
+    const radios = reqTbody.querySelectorAll('.req-radio');
+    radios.forEach((r, i) => { r.checked = (i === idx); });
+
+    // Highlight row
+    const rows = reqTbody.querySelectorAll('.req-row');
+    rows.forEach(r => r.classList.remove('row-selected'));
+    rows[idx].classList.add('row-selected');
+
+    // Compose job description from Skill + Designation + JD
+    const skill = selectedRequisition['Skill'] || '';
+    const designation = selectedRequisition['Designation'] || '';
+    const jd = selectedRequisition['JD'] || '';
+    const location = selectedRequisition['Location'] || '';
+    const grade = selectedRequisition['Grade'] || '';
+    const reqId = selectedRequisition['Requisition ID'] || '';
+
+    let composedJD = '';
+    if (designation) composedJD += `Role: ${designation}\n`;
+    if (skill) composedJD += `Required Skills: ${skill}\n`;
+    if (location) composedJD += `Location: ${location}\n`;
+    if (grade) composedJD += `Grade: ${grade}\n`;
+    if (jd) composedJD += `\nJob Description:\n${jd}`;
+
+    jdInput.value = composedJD.trim();
+
+    // Update info panel
+    selectedReqInfo.innerHTML = `<strong>${escapeHtml(reqId)}</strong> — ${escapeHtml(designation)} | ${escapeHtml(skill)}`;
+
+    // Show input section
+    inputSection.classList.remove('hidden');
+    updateEvaluateButton();
+}
 
 // === Enable/disable evaluate button ===
 function updateEvaluateButton() {
-    evaluateBtn.disabled = !(jdInput.value.trim() && (folderInput.value.trim() || selectedFiles.length > 0));
+    evaluateBtn.disabled = !(jdInput.value.trim() && folderInput.value.trim());
 }
 
 jdInput.addEventListener('input', updateEvaluateButton);
 folderInput.addEventListener('input', updateEvaluateButton);
-fileInput.addEventListener('change', () => {
-    addFiles(Array.from(fileInput.files));
-    fileInput.value = '';
-});
-
-dropZone.addEventListener('click', () => fileInput.click());
-
-renderFileList();
-
-dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('drag-over');
-});
-
-dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('drag-over');
-});
-
-dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    const files = Array.from(e.dataTransfer.files).filter(f =>
-        f.name.toLowerCase().endsWith('.pdf') || f.name.toLowerCase().endsWith('.docx')
-    );
-    addFiles(files);
-});
 
 // === Clear ===
 clearBtn.addEventListener('click', () => {
     jdInput.value = '';
     folderInput.value = '';
-    selectedFiles = [];
-    renderFileList();
+    allResults = [];
+    selectedRequisition = null;
     updateEvaluateButton();
     progressSection.classList.add('hidden');
     jdSection.classList.add('hidden');
     resultsSection.classList.add('hidden');
+    detailPanel.classList.add('hidden');
     progressLog.innerHTML = '';
     jdDetails.innerHTML = '';
-    resultsContainer.innerHTML = '';
+    resultsTbody.innerHTML = '';
+    detailPanel.innerHTML = '';
+    selectedReqInfo.innerHTML = 'None selected';
+    // Deselect requisition
+    const radios = reqTbody.querySelectorAll('.req-radio');
+    radios.forEach(r => { r.checked = false; });
+    const rows = reqTbody.querySelectorAll('.req-row');
+    rows.forEach(r => r.classList.remove('row-selected'));
+    updateSelectionCount();
 });
+
+// === Select All checkbox ===
+selectAllCheckbox.addEventListener('change', () => {
+    const checkboxes = resultsTbody.querySelectorAll('.row-check');
+    checkboxes.forEach(cb => { cb.checked = selectAllCheckbox.checked; });
+    updateSelectionCount();
+});
+
+// === Screen Selected Candidates ===
+screenBtn.addEventListener('click', () => {
+    const selected = getSelectedCandidates();
+    if (selected.length === 0) return;
+    sessionStorage.setItem('screeningCandidates', JSON.stringify(selected));
+    window.location.href = '/screening';
+});
+
+function getSelectedCandidates() {
+    const checkboxes = resultsTbody.querySelectorAll('.row-check:checked');
+    const candidates = [];
+    checkboxes.forEach(cb => {
+        const idx = parseInt(cb.dataset.index, 10);
+        if (allResults[idx]) {
+            const r = allResults[idx];
+            const contact = r.candidate_contact || {};
+            candidates.push({
+                name: contact.name || r.resume_filename || 'Unknown',
+                email: contact.email || '',
+                phone: contact.phone || '',
+                score: (r.candidate_evaluation || {}).overall_score || 0,
+                filename: r.resume_filename || '',
+            });
+        }
+    });
+    return candidates;
+}
+
+function updateSelectionCount() {
+    const checked = resultsTbody.querySelectorAll('.row-check:checked').length;
+    selectedCountSpan.textContent = `${checked} selected`;
+    screenBtn.disabled = checked === 0;
+}
 
 // === Evaluate ===
 evaluateBtn.addEventListener('click', startEvaluation);
@@ -70,7 +184,7 @@ evaluateBtn.addEventListener('click', startEvaluation);
 async function startEvaluation() {
     const jd = jdInput.value.trim();
     const folder = folderInput.value.trim();
-    if (!jd || (!folder && selectedFiles.length === 0)) return;
+    if (!jd || !folder) return;
 
     // UI state: processing
     evaluateBtn.disabled = true;
@@ -79,8 +193,11 @@ async function startEvaluation() {
     progressSection.classList.remove('hidden');
     jdSection.classList.add('hidden');
     resultsSection.classList.add('hidden');
+    detailPanel.classList.add('hidden');
     progressLog.innerHTML = '';
-    resultsContainer.innerHTML = '';
+    resultsTbody.innerHTML = '';
+    detailPanel.innerHTML = '';
+    allResults = [];
 
     logProgress('Starting evaluation pipeline...', 'info');
 
@@ -101,25 +218,21 @@ async function startEvaluation() {
     }
 
     try {
-        let response;
+        logProgress('Using local folder evaluation path...', 'info');
+        const params = new URLSearchParams({
+            resume_folder: folder,
+            job_description: jd,
+        });
 
-        if (selectedFiles.length > 0) {
-            logProgress(`Uploading ${selectedFiles.length} resume file(s) via drag-and-drop...`, 'info');
-            const formData = new FormData();
-            formData.append('job_description', jd);
-            selectedFiles.forEach(file => formData.append('resumes', file));
-            response = await fetch('/api/evaluate', {
-                method: 'POST',
-                body: formData,
-            });
-        } else {
-            logProgress('Using local folder evaluation path...', 'info');
-            const params = new URLSearchParams({
-                resume_folder: folder,
-                job_description: jd,
-            });
-            response = await fetch(`/api/evaluate-local?${params.toString()}`);
+        // Pass requisition context if selected
+        if (selectedRequisition) {
+            const reqId = selectedRequisition['Requisition ID'] || '';
+            if (reqId) params.set('requisition_id', reqId);
+            params.set('requisition_json', JSON.stringify(selectedRequisition));
+            logProgress(`Requisition: ${reqId} — ${selectedRequisition['Designation'] || ''}`, 'info');
         }
+
+        const response = await fetch(`/api/evaluate-local?${params.toString()}`);
 
         if (!response.ok) {
             const rawText = await response.text().catch(() => '');
@@ -196,9 +309,8 @@ function handleStreamEvent(event) {
 
         case 'resume_completed':
             logProgress(`Completed: ${event.filename} (Score: ${event.result.candidate_evaluation.overall_score}/10)`, 'success');
-            addResultCard(event.result, resultsContainer.children.length);
+            addResultRow(event.result);
             resultsSection.classList.remove('hidden');
-            updateResultsRanking();
             break;
 
         case 'resume_error':
@@ -212,9 +324,8 @@ function handleStreamEvent(event) {
         case 'all_complete':
             logProgress(`Pipeline complete. ${event.total_processed} resume(s) evaluated.`, 'success');
             resultsCount.textContent = event.total_processed;
-            // Re-render with final ranked order
             if (event.results && event.results.length > 0) {
-                renderRankedResults(event.results);
+                renderRankedTable(event.results);
             }
             break;
 
@@ -297,66 +408,104 @@ function renderJDRequirements(jd) {
     jdDetails.innerHTML = html;
 }
 
-// === Results Rendering ===
-function addResultCard(result, index) {
-    const card = createResultCard(result, index + 1);
-    resultsContainer.appendChild(card);
+// === Table-based Results Rendering ===
+
+function addResultRow(result) {
+    const idx = allResults.length;
+    allResults.push(result);
+    const row = buildRow(result, idx, idx + 1);
+    resultsTbody.appendChild(row);
 }
 
-function renderRankedResults(results) {
-    resultsContainer.innerHTML = '';
+function renderRankedTable(results) {
+    resultsTbody.innerHTML = '';
+    detailPanel.classList.add('hidden');
+    detailPanel.innerHTML = '';
+    allResults = results;
+
     results.forEach((result, idx) => {
-        const card = createResultCard(result, idx + 1);
-        resultsContainer.appendChild(card);
+        const row = buildRow(result, idx, idx + 1);
+        resultsTbody.appendChild(row);
     });
+    selectAllCheckbox.checked = false;
+    updateSelectionCount();
 }
 
-function updateResultsRanking() {
-    // Re-sort existing cards by score
-    const cards = Array.from(resultsContainer.children);
-    cards.sort((a, b) => {
-        const scoreA = parseFloat(a.dataset.score) || 0;
-        const scoreB = parseFloat(b.dataset.score) || 0;
-        return scoreB - scoreA;
-    });
-    cards.forEach((card, idx) => {
-        const rankBadge = card.querySelector('.rank-badge');
-        const rank = idx + 1;
-        rankBadge.textContent = `#${rank}`;
-        rankBadge.className = `rank-badge ${rank <= 3 ? 'rank-' + rank : 'rank-default'}`;
-        resultsContainer.appendChild(card);
-    });
-}
-
-function createResultCard(result, rank) {
+function buildRow(result, idx, rank) {
     const eval_ = result.candidate_evaluation || {};
     const meta = result.reliability_metadata || {};
-    const audit = result.audit_trail || {};
+    const contact = result.candidate_contact || {};
     const score = eval_.overall_score || 0;
     const filename = result.resume_filename || 'Unknown';
 
+    const candidateName = contact.name || deriveName(filename);
+    const email = contact.email || 'N/A';
+    const phone = contact.phone || 'N/A';
+    const experience = contact.total_experience || 'N/A';
+    const location = contact.location || 'N/A';
     const scoreClass = score >= 7 ? 'score-high' : score >= 5 ? 'score-mid' : 'score-low';
-    const rankClass = rank <= 3 ? `rank-${rank}` : 'rank-default';
+    const dealBreaker = (eval_.deal_breaker_check || {}).status || 'N/A';
+    const dealClass = dealBreaker === 'PASS' ? 'tag-pass' : dealBreaker === 'FAIL' ? 'tag-fail' : '';
 
-    const card = document.createElement('div');
-    card.className = 'result-card';
-    card.dataset.score = score;
+    const tr = document.createElement('tr');
+    tr.className = 'result-row';
+    tr.dataset.index = idx;
 
-    card.innerHTML = `
-        <div class="result-header" onclick="this.parentElement.classList.toggle('expanded')">
-            <div class="rank-badge ${rankClass}">#${rank}</div>
-            <div class="result-info">
-                <div class="result-filename">${escapeHtml(filename)}</div>
-                <div class="result-meta">
-                    <span>Confidence: ${meta.confidence || 'N/A'}</span>
-                    <span>Status: ${meta.status || 'N/A'}</span>
-                    <span>Attempts: ${meta.total_attempts || 1}</span>
-                </div>
-            </div>
-            <div class="result-score ${scoreClass}">${score.toFixed(1)}</div>
-            <div class="result-toggle">&#9662;</div>
-        </div>
-        <div class="result-details">
+    tr.innerHTML = `
+        <td class="col-check"><input type="checkbox" class="row-check" data-index="${idx}"></td>
+        <td class="col-rank"><span class="rank-badge rank-${rank <= 3 ? rank : 'default'}">#${rank}</span></td>
+        <td class="col-name">${escapeHtml(candidateName)}</td>
+        <td class="col-email">${escapeHtml(email)}</td>
+        <td class="col-phone">${escapeHtml(phone)}</td>
+        <td>${escapeHtml(experience)}</td>
+        <td>${escapeHtml(location)}</td>
+        <td class="col-score"><span class="${scoreClass}">${score.toFixed(1)}</span></td>
+        <td class="col-confidence">${escapeHtml(meta.confidence || 'N/A')}</td>
+        <td class="col-deal"><span class="${dealClass}">${escapeHtml(dealBreaker)}</span></td>
+        <td class="col-expand"><button class="expand-btn" title="View details">&#9662;</button></td>
+    `;
+
+    tr.querySelector('.row-check').addEventListener('change', (e) => {
+        e.stopPropagation();
+        updateSelectionCount();
+    });
+
+    tr.querySelector('.expand-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDetail(idx);
+    });
+
+    tr.addEventListener('click', (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        toggleDetail(idx);
+    });
+
+    return tr;
+}
+
+function toggleDetail(idx) {
+    const result = allResults[idx];
+    if (!result) return;
+
+    if (detailPanel.dataset.activeIndex === String(idx) && !detailPanel.classList.contains('hidden')) {
+        detailPanel.classList.add('hidden');
+        detailPanel.dataset.activeIndex = '';
+        return;
+    }
+
+    detailPanel.dataset.activeIndex = String(idx);
+    detailPanel.innerHTML = renderDetailContent(result);
+    detailPanel.classList.remove('hidden');
+    detailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderDetailContent(result) {
+    const eval_ = result.candidate_evaluation || {};
+    const meta = result.reliability_metadata || {};
+    const audit = result.audit_trail || {};
+
+    return `
+        <div class="detail-inner">
             ${renderDealBreaker(eval_.deal_breaker_check)}
             ${renderCategoryScores(eval_.category_scores)}
             ${renderMatched(eval_.matched_requirements)}
@@ -366,8 +515,6 @@ function createResultCard(result, rank) {
             ${renderAuditTrail(audit)}
         </div>
     `;
-
-    return card;
 }
 
 function renderDealBreaker(check) {
@@ -490,39 +637,14 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-function formatSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1048576).toFixed(1) + ' MB';
+function deriveName(filename) {
+    if (!filename) return 'Unknown';
+    let name = filename.replace(/\.[^/.]+$/, '');
+    name = name.replace(/[_\-]+/g, ' ');
+    name = name.replace(/\b(resume|cv)\b/gi, '').trim();
+    if (!name) return filename;
+    return name.replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function addFiles(files) {
-    for (const file of files) {
-        if (!selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
-            selectedFiles.push(file);
-        }
-    }
-    renderFileList();
-    updateEvaluateButton();
-}
-
-function removeFile(index) {
-    selectedFiles.splice(index, 1);
-    renderFileList();
-    updateEvaluateButton();
-}
-
-function renderFileList() {
-    if (selectedFiles.length === 0) {
-        fileList.innerHTML = '<div class="file-item" style="justify-content:center;color:var(--text-secondary);">No resume files selected yet.</div>';
-        return;
-    }
-
-    fileList.innerHTML = selectedFiles.map((file, idx) => `
-        <div class="file-item">
-            <span class="file-name">${escapeHtml(file.name)}</span>
-            <span class="file-size">${formatSize(file.size)}</span>
-            <button class="remove-btn" onclick="removeFile(${idx})" title="Remove">&times;</button>
-        </div>
-    `).join('');
-}
+// === Init: load requisitions on page load ===
+loadRequisitions();

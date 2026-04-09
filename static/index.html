@@ -9,43 +9,57 @@
 <body>
     <header>
         <div class="header-content">
-            <h1>ATS Resume Evaluator</h1>
-            <p class="subtitle">AI-Powered Resume Screening with Hallucination Detection</p>
+            <h1>Agentic Hire</h1>
+            <p class="subtitle">AI-Powered Hiring System</p>
         </div>
     </header>
 
     <main>
-        <!-- Input Section -->
-        <section id="input-section" class="card">
+        <!-- Requisition Selector -->
+        <section id="requisition-section" class="card">
+            <h2>Select Job Requisition</h2>
+            <p class="results-subtitle">Choose a requisition from the table below. The job description will be auto-composed from Skill, Designation, and JD fields.</p>
+
+            <div class="req-controls">
+                <button id="load-req-btn" class="btn-secondary" onclick="loadRequisitions()">Reload</button>
+            </div>
+
+            <div class="table-wrapper" style="max-height:350px; overflow-y:auto; margin-top:0.75rem;">
+                <table class="results-table" id="req-table">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="radio" disabled style="visibility:hidden"></th>
+                            <th>Requisition ID</th>
+                            <th>Designation</th>
+                            <th>Skill</th>
+                            <th>Location</th>
+                            <th>Grade</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="req-tbody">
+                        <tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:2rem;">Loading requisitions...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Composed JD Preview + Folder Input -->
+        <section id="input-section" class="card hidden">
             <div class="input-grid">
-                <!-- Job Description -->
                 <div class="input-group">
-                    <label for="jd-input">Job Description</label>
-                    <textarea id="jd-input" placeholder="Paste the complete job description here..." rows="14"></textarea>
+                    <label>Composed Job Description <span style="font-weight:400;color:var(--text-secondary);font-size:0.8rem;">(auto-generated, editable)</span></label>
+                    <textarea id="jd-input" rows="10"></textarea>
                 </div>
-
-                <!-- Resume Folder Path -->
                 <div class="input-group">
-                    <label for="folder-input">Resume Folder or Drag & Drop Files</label>
-                    <input type="text" id="folder-input" placeholder="e.g. D:\HiringSystem\resumes" style="width:100%;padding:0.7rem 1rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.95rem;font-family:inherit;background:var(--bg);color:var(--text);margin-bottom:0.5rem;">
-                    <p class="hint" style="font-size:0.8rem;color:var(--text-secondary);margin:0;">Provide a local folder path or drag and drop PDF / DOCX resumes below.</p>
-                </div>
+                    <label for="folder-input">Resume Folder Location</label>
+                    <input type="text" id="folder-input" placeholder="e.g. D:\Resumes\candidates" class="text-input">
+                    <p class="hint">Provide the server-side path to the folder containing PDF / DOCX resumes.</p>
 
-                <div class="input-group">
-                    <label>Resume Files (PDF / DOCX)</label>
-                    <div id="drop-zone" class="drop-zone">
-                        <div class="drop-zone-content">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="17 8 12 3 7 8"/>
-                                <line x1="12" y1="3" x2="12" y2="15"/>
-                            </svg>
-                            <p>Drag & drop resumes here</p>
-                            <p class="hint">or click to browse</p>
-                        </div>
-                        <input type="file" id="file-input" multiple accept=".pdf,.docx" hidden>
+                    <div style="margin-top:1rem; padding:0.75rem; background:var(--bg); border-radius:var(--radius); font-size:0.83rem;">
+                        <strong>Selected Requisition:</strong>
+                        <div id="selected-req-info" style="margin-top:0.3rem; color:var(--text-secondary);">None selected</div>
                     </div>
-                    <div id="file-list" class="file-list"></div>
                 </div>
             </div>
 
@@ -76,8 +90,38 @@
         <!-- Results Section -->
         <section id="results-section" class="card hidden">
             <h2>Evaluation Results <span id="results-count" class="badge"></span></h2>
-            <p class="results-subtitle">Ranked by overall score (descending)</p>
-            <div id="results-container"></div>
+            <p class="results-subtitle">Ranked by overall score (descending). Select candidates to proceed with screening.</p>
+
+            <div class="table-wrapper">
+                <table id="results-table" class="results-table">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="select-all" title="Select all"></th>
+                            <th class="col-rank">#</th>
+                            <th>Candidate Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Experience</th>
+                            <th>Location</th>
+                            <th class="col-score">Score</th>
+                            <th>Confidence</th>
+                            <th>Deal-Breaker</th>
+                            <th class="col-expand"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-tbody"></tbody>
+                </table>
+            </div>
+
+            <!-- Expanded detail panel -->
+            <div id="detail-panel" class="detail-panel hidden"></div>
+
+            <div class="screening-actions">
+                <button id="screen-btn" class="btn-primary" disabled>
+                    Screen Selected Candidates
+                </button>
+                <span id="selected-count" class="selected-count">0 selected</span>
+            </div>
         </section>
     </main>
 

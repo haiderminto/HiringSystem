@@ -9,10 +9,13 @@ Endpoints:
 
 import os
 import sys
+import csv
 import json
 import time
 import asyncio
 import logging
+import signal
+import subprocess
 import traceback
 from typing import List, Optional
 
@@ -20,12 +23,13 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from config import settings
 from agents.state import AgentState
 from agents.graph import run_pipeline
 from agents.nodes import jd_extraction
-from utils.storage import get_upload_folder, save_uploaded_file, save_results, ensure_directories
+from utils.storage import get_upload_folder, save_uploaded_file, save_results, save_results_csv, ensure_directories
 from utils.observability import init_tracing
 
 # Configure logging
@@ -82,6 +86,33 @@ async def health():
         "api_key_set": bool(settings.active_api_key) and not settings.active_api_key.endswith("here"),
         "arize_tracing": _tracing_ok,
     }
+
+
+@app.get("/api/requisitions")
+async def get_requisitions():
+    """Load job requisitions from the configured CSV file."""
+    csv_path = settings.job_requisition_csv
+    if not csv_path or not os.path.isfile(csv_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Requisition CSV not found: {csv_path}. Set JOB_REQUISITION_CSV in .env."
+        )
+
+    try:
+        rows = []
+        # Try utf-8-sig first, fall back to cp1252 for Windows-encoded files
+        for enc in ("utf-8-sig", "cp1252", "latin-1"):
+            try:
+                with open(csv_path, "r", encoding=enc) as f:
+                    reader = csv.DictReader(f)
+                    rows = [row for row in reader]
+                break
+            except UnicodeDecodeError:
+                continue
+        return {"requisitions": rows, "total": len(rows)}
+    except Exception as e:
+        logger.error(f"Failed to read requisition CSV: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/")
@@ -276,19 +307,33 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 
 
 @app.get("/api/evaluate-local")
-async def evaluate_local(resume_folder: str, job_description: str = ""):
+async def evaluate_local(
+    resume_folder: str,
+    job_description: str = "",
+    requisition_id: str = "",
+    requisition_json: str = "",
+):
     """
     Evaluate resumes from a local folder path — GET request to bypass proxy.
-    Query params: ?resume_folder=...&job_description=...
+    Query params: ?resume_folder=...&job_description=...&requisition_id=...&requisition_json=...
     If job_description is empty, falls back to JD_TEXT from .env.
     """
     job_description = job_description.strip() or settings.jd_text.strip()
     resume_folder = resume_folder.strip()
 
+    # Parse requisition data if provided
+    requisition_data = {}
+    if requisition_json:
+        try:
+            requisition_data = json.loads(requisition_json)
+        except json.JSONDecodeError:
+            pass
+
     print("\n" + "=" * 80)
     print("[TRACE] >>> API HIT: GET /api/evaluate-local")
     print(f"[TRACE]   JD length        : {len(job_description)} chars")
     print(f"[TRACE]   Resume folder    : {resume_folder}")
+    print(f"[TRACE]   Requisition ID   : {requisition_id}")
     print(f"[TRACE]   LLM provider     : {settings.llm_provider}")
     print(f"[TRACE]   Default model    : {settings.active_default_model}")
     print("=" * 80)
@@ -363,6 +408,7 @@ async def evaluate_local(resume_folder: str, job_description: str = ""):
                     resume_file_path=file_path,
                     resume_file_type=file_type,
                     resume_filename=filename,
+                    requisition_id=requisition_id,
                     current_model=settings.active_default_model,
                 )
 
@@ -385,9 +431,18 @@ async def evaluate_local(resume_folder: str, job_description: str = ""):
 
         try:
             ensure_directories()
+            # Save JSON results
             results_path = os.path.join(settings.results_dir, "evaluation_results.json")
             with open(results_path, "w", encoding="utf-8") as f:
                 json.dump({"ranked_results": ranked, "jd_requirements": jd_requirements}, f, indent=2, default=str)
+
+            # Save CSV results to configured path from .env
+            csv_path = settings.resume_results_csv
+            if not csv_path:
+                csv_filename = f"evaluation_{requisition_id}.csv" if requisition_id else "evaluation_results.csv"
+                csv_path = os.path.join(settings.results_dir, csv_filename)
+            save_results_csv(ranked, requisition_data, csv_path)
+            logger.info(f"CSV results saved to {csv_path}")
         except Exception as e:
             logger.warning(f"Failed to save results: {e}")
 
@@ -399,6 +454,117 @@ async def evaluate_local(resume_folder: str, job_description: str = ""):
 def _ndjson(obj: dict) -> str:
     """Serialize an object as a single NDJSON line."""
     return json.dumps(obj, default=str) + "\n"
+
+
+# ── Screening Call API ───────────────────────────────────────────────────────
+
+_screening_proc = None          # track the running screening subprocess
+_screening_port = 8100          # base port for screening servers
+
+
+class ScreenStartRequest(BaseModel):
+    candidate_name: str
+    port: int = 0               # 0 = auto-assign
+
+
+@app.post("/api/screen-start")
+async def screen_start(req: ScreenStartRequest):
+    """Start a screening call for a candidate via screening_call.py."""
+    global _screening_proc, _screening_port
+
+    # Kill any existing screening process
+    if _screening_proc and _screening_proc.poll() is None:
+        _screening_proc.terminate()
+        try:
+            _screening_proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            _screening_proc.kill()
+
+    port = req.port or _screening_port
+    _screening_port = port + 1  # increment for next call
+
+    script = os.path.join(os.path.dirname(__file__), "screening_call.py")
+    cmd = [sys.executable, script, "generate", req.candidate_name, "--port", str(port)]
+
+    try:
+        _screening_proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=os.path.dirname(__file__),
+        )
+
+        # Wait briefly to capture the local URL from stdout
+        local_url = f"http://localhost:{port}/interview_{req.candidate_name.replace(' ', '_').lower()}.html"
+
+        return {
+            "status": "started",
+            "candidate_name": req.candidate_name,
+            "port": port,
+            "local_url": local_url,
+            "pid": _screening_proc.pid,
+        }
+    except Exception as e:
+        logger.error(f"Failed to start screening for {req.candidate_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/screen-results")
+async def screen_results(conv_id: str = "", candidate_name: str = ""):
+    """Fetch screening results from ElevenLabs API."""
+    try:
+        # Import functions from screening_call.py
+        sys.path.insert(0, os.path.dirname(__file__))
+        from screening_call import get_latest_conv_id, fetch_conversation
+
+        cid = conv_id or get_latest_conv_id()
+        data = fetch_conversation(cid)
+
+        transcript = data.get("transcript", [])
+        analysis = data.get("analysis", {})
+
+        criteria = analysis.get("evaluation_criteria_results", {})
+        proceed = criteria.get("proceed_to_next_round", {})
+
+        return {
+            "status": "completed",
+            "conversation_id": cid,
+            "candidate_name": candidate_name,
+            "transcript_summary": analysis.get("transcript_summary", ""),
+            "proceed_to_next_round": proceed.get("result", "N/A"),
+            "rationale": proceed.get("rationale", ""),
+            "evaluation_criteria": criteria,
+            "data_collected": analysis.get("data_collection_results", {}),
+            "transcript": transcript,
+        }
+    except SystemExit:
+        # screening_call.py calls exit() on errors
+        raise HTTPException(status_code=404, detail="No screening conversations found yet.")
+    except Exception as e:
+        logger.error(f"Failed to fetch screening results: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/screen-stop")
+async def screen_stop():
+    """Stop the current screening subprocess."""
+    global _screening_proc
+    if _screening_proc and _screening_proc.poll() is None:
+        _screening_proc.terminate()
+        try:
+            _screening_proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            _screening_proc.kill()
+        _screening_proc = None
+        return {"status": "stopped"}
+    return {"status": "no_active_screening"}
+
+
+# Serve screening.html
+@app.get("/screening")
+async def screening_page():
+    return FileResponse(os.path.join(static_dir, "screening.html"))
 
 
 if __name__ == "__main__":

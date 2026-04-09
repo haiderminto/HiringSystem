@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candidate Screening — ATS Resume Evaluator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>Candidate Screening</h1>
+            <p class="subtitle">AI-Powered Voice Screening via ElevenLabs</p>
+        </div>
+    </header>
+
+    <main>
+        <!-- Controls -->
+        <section class="card screening-controls">
+            <div class="screening-header">
+                <a href="/" class="btn-secondary btn-back">&larr; Back to Evaluation</a>
+                <div class="screening-status">
+                    <span id="status-text">Preparing...</span>
+                    <span id="status-indicator" class="status-dot dot-pending"></span>
+                </div>
+                <button id="stop-all-btn" class="btn-danger">Stop Screening</button>
+            </div>
+        </section>
+
+        <!-- Screening Progress Log -->
+        <section id="screening-log-section" class="card">
+            <h2>Screening Log</h2>
+            <div id="screening-log" class="progress-log"></div>
+        </section>
+
+        <!-- Candidates Table -->
+        <section class="card">
+            <h2>Selected Candidates <span id="candidate-count" class="badge"></span></h2>
+            <div class="table-wrapper">
+                <table class="results-table screening-table">
+                    <thead>
+                        <tr>
+                            <th class="col-rank">#</th>
+                            <th>Candidate Name</th>
+                            <th>Score</th>
+                            <th>Screening Status</th>
+                            <th>Screening Result</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="screening-tbody"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>ATS Resume Evaluator Agent v1.0 &mdash; Powered by Claude</p>
+    </footer>
+
+    <script src="/static/screening.js"></script>
+</body>
+</html>
